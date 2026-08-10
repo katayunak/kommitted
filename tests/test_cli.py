@@ -1,50 +1,29 @@
 """End-to-end tests for the CLI.
 
-These run the real script as a subprocess inside real throwaway git repos -
-the same way a user runs it. Slower than the unit tests in model/, but they
-are the only ones that prove the whole pipeline is wired together.
-
-Run from the project root:   python3 -m pytest -q
+These run the real entry point as a subprocess inside real throwaway repos -
+the same way a user runs it. Slower than the unit tests, but the only ones
+that prove the whole pipeline is wired together.
 """
 
 import subprocess
 import sys
-from pathlib import Path
 
-import pytest
-
-SCRIPT = Path(__file__).parent / "committed.py"
-
-
-@pytest.fixture
-def repo(tmp_path, monkeypatch):
-    """An empty git repo, already the current working directory."""
-    monkeypatch.chdir(tmp_path)
-    subprocess.run(["git", "init", "-q"], check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], check=True)
-    subprocess.run(["git", "config", "user.name", "test"], check=True)
-    return tmp_path
+from .conftest import stage
 
 
 def run_cli(*flags: str) -> subprocess.CompletedProcess:
-    """Run committed.py the way a user would."""
+    """Run the tool the way a user would, via `python -m committed`."""
     return subprocess.run(
-        [sys.executable, str(SCRIPT), *flags],
+        [sys.executable, "-m", "committed", *flags],
         capture_output=True,
         text=True,
     )
 
 
-def stage(path: Path, name: str, content: str) -> None:
-    target = path / name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content)
-    subprocess.run(["git", "add", name], check=True)
-
-
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
+
 
 def test_prints_a_message(repo):
     stage(repo, "model/classifier.py", "x = 1\n")
@@ -56,8 +35,7 @@ def test_prints_a_message(repo):
 
 def test_message_has_the_git_required_blank_line(repo):
     stage(repo, "model/a.py", "one\ntwo\n")
-    lines = run_cli().stdout.split("\n")
-    assert lines[1] == ""
+    assert run_cli().stdout.split("\n")[1] == ""
 
 
 def test_body_lists_each_file(repo):
@@ -82,6 +60,7 @@ def test_tests_only_change_is_classified_as_test(repo):
 # Nothing staged - a normal state, not a failure
 # ---------------------------------------------------------------------------
 
+
 def test_nothing_staged_exits_zero(repo):
     proc = run_cli()
     assert proc.returncode == 0
@@ -92,10 +71,9 @@ def test_nothing_staged_exits_zero(repo):
 # Failure
 # ---------------------------------------------------------------------------
 
-def test_outside_a_repo_exits_one(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)  # not a git repo
-    proc = run_cli()
 
+def test_outside_a_repo_exits_one(empty_dir):
+    proc = run_cli()
     assert proc.returncode == 1
     assert proc.stdout == ""  # nothing on the data channel
     assert "error:" in proc.stderr
@@ -105,6 +83,7 @@ def test_outside_a_repo_exits_one(tmp_path, monkeypatch):
 # --why
 # ---------------------------------------------------------------------------
 
+
 def test_why_writes_reasoning_to_stderr_only(repo):
     stage(repo, "model/a.py", "x\n")
     proc = run_cli("--why")
@@ -113,19 +92,39 @@ def test_why_writes_reasoning_to_stderr_only(repo):
     assert "confidence" not in proc.stdout  # stdout stays pipeable
 
 
+def test_why_names_the_brain(repo):
+    stage(repo, "model/a.py", "x\n")
+    assert "rules" in run_cli("--why").stderr
+
+
 def test_without_why_stderr_is_clean(repo):
     stage(repo, "model/a.py", "x\n")
     assert run_cli().stderr == ""
 
 
 # ---------------------------------------------------------------------------
+# --brain
+# ---------------------------------------------------------------------------
+
+
+def test_brain_flag_accepts_rules(repo):
+    stage(repo, "model/a.py", "x\n")
+    assert run_cli("--brain", "rules").returncode == 0
+
+
+def test_unknown_brain_is_rejected_by_argparse(repo):
+    proc = run_cli("--brain", "nonsense")
+    assert proc.returncode == 2  # argparse usage error
+
+
+# ---------------------------------------------------------------------------
 # --commit
 # ---------------------------------------------------------------------------
 
+
 def test_commit_creates_a_real_commit(repo):
     stage(repo, "model/a.py", "x\n")
-    proc = run_cli("--commit")
-    assert proc.returncode == 0
+    assert run_cli("--commit").returncode == 0
 
     log = subprocess.run(
         ["git", "log", "--pretty=%s"], capture_output=True, text=True, check=True
@@ -168,6 +167,7 @@ def test_without_commit_flag_nothing_is_committed(repo):
 # argparse plumbing
 # ---------------------------------------------------------------------------
 
+
 def test_help_exits_zero():
     proc = run_cli("--help")
     assert proc.returncode == 0
@@ -175,6 +175,4 @@ def test_help_exits_zero():
 
 
 def test_unknown_flag_exits_two():
-    # argparse's own convention for a usage error.
-    proc = run_cli("--nonsense")
-    assert proc.returncode == 2
+    assert run_cli("--nonsense").returncode == 2

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "committed"
+version = "0.1.0"
+description = "Write Conventional Commits messages from your staged git changes."
+requires-python = ">=3.10"
+dependencies = []          # zero runtime deps: stdlib only, so it stays free
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+# This is what replaces the sys.path hack AND the shebang: pip creates a real
+# `committed` executable on your PATH, with the right interpreter baked in.
+[project.scripts]
+committed = "committed.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
