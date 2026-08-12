@@ -1,11 +1,9 @@
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(frozen=True)
 class NumStat:
     """One changed file, as reported by `git diff --numstat`.
-
-    added_lines/deleted_lines are None for binary files - git prints "-"
     """
 
     added_lines: int | None
@@ -20,19 +18,26 @@ class NumStat:
     # fields, or pass --no-renames to git to sidestep it entirely.
 
     @property
-    def churn(self) -> int:
+    def total_lines_changed(self) -> int:
         """Total lines touched. Binary files count as 0."""
         return (self.added_lines or 0) + (self.deleted_lines or 0)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Classification:
     """A brain's verdict on what kind of commit this is.
-
-    `confidence` and `reasons` are how you debug a wrong answer, and how you compare one brain against another - which is
-    the whole point of having a Brain interface.
     """
 
     type: str
     confidence: float  # 0.0 - 1.0
-    reasons: list[str] = field(default_factory=list)
+    reasons: tuple[str, ...] = field(default_factory=tuple)
+    subject: str | None = None
+
+    def with_reason(self, reason: str) -> "Classification":
+        """A copy with `reason` at the front. Used by the LLM fallback path."""
+        return Classification(
+            type=self.type,
+            confidence=self.confidence,
+            reasons=(reason, *self.reasons),
+            subject=self.subject,
+        )

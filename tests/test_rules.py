@@ -2,10 +2,10 @@
 
 import pytest
 
-from committed import constants as c
-from committed.brains import BRAINS, DEFAULT_BRAIN, get_brain
-from committed.brains.rules import RuleBrain, is_config, is_doc, is_test
-from committed.diffparser import parse_numstat
+from kommitted import constants as c
+from kommitted.brains import BRAINS, DEFAULT_BRAIN, get_brain
+from kommitted.brains.rules import RuleBrain, is_config, is_doc, is_test
+from kommitted.diffparser import parse_numstat
 
 from .conftest import stat
 
@@ -52,7 +52,7 @@ def test_nothing_staged(brain):
     result = brain.classify([])
     assert result.type == c.TYPE_CHORE
     assert result.confidence == c.CONFIDENCE_NONE
-    assert result.reasons == [c.REASON_NOTHING_STAGED]
+    assert result.reasons == (c.REASON_NOTHING_STAGED,)
 
 
 def test_only_tests(brain):
@@ -64,7 +64,7 @@ def test_only_tests(brain):
 def test_only_docs(brain):
     result = brain.classify([stat("README.md", 12, 3)])
     assert result.type == c.TYPE_DOCS
-    assert result.reasons == [c.REASON_ONLY_DOCS]
+    assert result.reasons == (c.REASON_ONLY_DOCS,)
 
 
 def test_only_config(brain):
@@ -123,7 +123,7 @@ def test_shape_rules_are_less_confident_than_path_rules(brain):
 
 
 def test_binary_only_change_does_not_crash(brain):
-    from committed.models import NumStat
+    from kommitted.models import NumStat
 
     result = brain.classify([NumStat(None, None, "logo.png")])
     assert result.type  # any answer is fine; not crashing is the point

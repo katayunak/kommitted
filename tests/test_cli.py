@@ -12,9 +12,9 @@ from .conftest import stage
 
 
 def run_cli(*flags: str) -> subprocess.CompletedProcess:
-    """Run the tool the way a user would, via `python -m committed`."""
+    """Run the tool the way a user would, via `python -m kommitted`."""
     return subprocess.run(
-        [sys.executable, "-m", "committed", *flags],
+        [sys.executable, "-m", "kommitted", *flags],
         capture_output=True,
         text=True,
     )

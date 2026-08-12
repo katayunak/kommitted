@@ -2,8 +2,8 @@
 
 import pytest
 
-from committed.diffparser import parse_count, parse_numstat
-from committed.models import NumStat
+from kommitted.diffparser import parse_count, parse_numstat
+from kommitted.models import NumStat
 
 # ---------------------------------------------------------------------------
 # parse_count - pure, so these are the cheapest tests in the project
@@ -102,9 +102,9 @@ def test_blank_lines_are_skipped():
 # ---------------------------------------------------------------------------
 
 
-def test_churn_sums_both_columns():
-    assert NumStat(10, 5, "a.py").churn == 15
+def test_total_lines_changed_sums_both_columns():
+    assert NumStat(10, 5, "a.py").total_lines_changed == 15
 
 
-def test_churn_of_binary_is_zero():
-    assert NumStat(None, None, "logo.png").churn == 0
+def test_total_lines_changed_of_binary_is_zero():
+    assert NumStat(None, None, "logo.png").total_lines_changed == 0

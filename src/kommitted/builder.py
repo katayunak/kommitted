@@ -9,18 +9,16 @@ def scope(stats: list[NumStat]) -> str:
         return ""
 
     nested = [st for st in stats if os.path.dirname(st.path)]
-
-    # Everything sits at the repo root - there is no component to name.
     if not nested:
-        return ""
+        return ""  # everything sits at the repo root
 
     if len(nested) < len(stats):
         # Mixed: some files at the root, some nested. Only claim a scope if
         # the nested files carry most of the weight.
-        total = sum(st.churn for st in stats)
-        nested_churn = sum(st.churn for st in nested)
-        # total == 0 means every file was empty or binary; no basis to judge.
-        if total == 0 or nested_churn / total < c.SCOPE_DOMINANCE:
+        total_changed = sum(st.total_lines_changed for st in stats)
+        nested_changed = sum(st.total_lines_changed for st in nested)
+
+        if total_changed == 0 or nested_changed / total_changed < c.SCOPE_DOMINANCE:
             return ""
 
     # commonpath finds the deepest shared directory. It raises on an empty
@@ -38,16 +36,22 @@ def scope(stats: list[NumStat]) -> str:
 def subject(classification: Classification, stats: list[NumStat]) -> str:
     verb = c.VERBS.get(classification.type, c.DEFAULT_VERB)
 
+    if classification.subject:
+        # Complete subject, verb included. Used verbatim - the builder makes
+        # no decisions about its shape.
+        return classification.subject.strip()
+
     if len(stats) == 1:
-        # One file -> name it. 'model/classifier.py' -> 'classifier'
+        # One file has changed
         name = os.path.basename(stats[0].path)
         stem = os.path.splitext(name)[0]
         return f"{verb} {stem}"
 
-    component = scope(stats)
-    if component:
-        return f"{verb} {component}"
+    changed_scope = scope(stats)
+    if changed_scope:
+        return f"{verb} {changed_scope}"
 
+    # todo: this may sound silly, needs to be stronger
     return f"{verb} {len(stats)} files"
 
 
@@ -58,23 +62,19 @@ def format_file_line(st: NumStat) -> str:
 
 
 def build(classification: Classification, stats: list[NumStat]) -> str:
-    """Assemble the full message.
-
+    """
     Format:
         <type>(<scope>): <subject>
         <BLANK LINE>
         - file (+a -d)
-
-    The blank line is mandatory. Git treats line 1 as the summary and
-    everything after the blank line as the body; without it, `git log
-    --oneline` prints the entire message as the subject.
     """
-    component = scope(stats)
-    head = f"{classification.type}({component})" if component else classification.type
+    changed_scope = scope(stats)
+    head = classification.type
+
+    if changed_scope:
+        head = f"{classification.type}({changed_scope})"
     header = f"{head}: {subject(classification, stats)}"
 
-    # Truncate rather than emit an oversized subject. Rare, but a 200-char
-    # subject line is worse than a clipped one.
     if len(header) > c.MAX_SUBJECT_LEN:
         header = header[: c.MAX_SUBJECT_LEN - 3] + "..."
 

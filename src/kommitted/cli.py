@@ -3,27 +3,30 @@ import sys
 
 from . import constants as c
 from . import gitrunner
-from .brains import BRAINS, DEFAULT_BRAIN, get_brain
+from .brains import BRAINS, BRAINS_NEEDING_DIFF, DEFAULT_BRAIN, get_brain
 from .builder import build
 from .diffparser import parse_numstat
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="committed",
+        prog="kommitted",
         description="Write a Conventional Commits message from staged changes.",
     )
     parser.add_argument(
+        "-y",
         "--why",
         action="store_true",
         help="show why this commit type was chosen",
     )
     parser.add_argument(
+        "-c",
         "--commit",
         action="store_true",
         help="create the commit, not just print the message",
     )
     parser.add_argument(
+        "-b",
         "--brain",
         default=DEFAULT_BRAIN,
         choices=sorted(BRAINS),
@@ -35,30 +38,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def run(args: argparse.Namespace) -> int:
-    """The whole pipeline. Returns the process exit code.
-
-    Returning a code instead of calling sys.exit keeps this testable - a test
-    can assert on the return value rather than catching SystemExit.
-    """
+    # always start simple
     stats = parse_numstat(gitrunner.staged_numstat())
 
     if not stats:
-        # Not an error: git worked fine and there is simply nothing staged.
+        # nothing staged yet
         print(c.MSG_NOTHING_STAGED)
         return c.EXIT_OK
 
     brain = get_brain(args.brain)
-    # Only fetch the full diff if the brain will actually use it. The rule
-    # brain ignores it, and on a big changeset this is a lot of text.
-    diff = "" if brain.name == "rules" else gitrunner.staged_diff()
+
+    diff = ""
+    if brain.name in BRAINS_NEEDING_DIFF:
+        diff = gitrunner.staged_diff()
 
     classification = brain.classify(stats, diff)
     message = build(classification, stats)
 
     if args.why:
-        # Reasoning goes to stderr so `committed | git commit -F -` still
-        # pipes a clean message. Same stdout-is-the-data-channel discipline
-        # as the parser.
+        # committed --why | git commit -F -
+        # the terminal still displays stderr, so the user sees the explanation, but it doesn't enter the pipe
+        # stdout will
         print(
             f"brain: {brain.name}  type: {classification.type} "
             f"(confidence {classification.confidence:.2f})",
@@ -85,7 +85,3 @@ def main(argv: list[str] | None = None) -> int:
         # its traceback rather than be swallowed here.
         print(f"error: {exc}", file=sys.stderr)
         return c.EXIT_ERROR
-
-
-if __name__ == "__main__":
-    sys.exit(main())
