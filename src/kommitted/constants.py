@@ -101,7 +101,7 @@ REASON_LLM_LOW_CONFIDENCE = "model confidence {value:.2f} below threshold - used
 
 # Gemini's free tier. Flash is the fast/cheap model and is what the free
 # quota targets; see https://ai.google.dev/gemini-api/docs/rate-limits
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 GEMINI_API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
