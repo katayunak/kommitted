@@ -17,6 +17,7 @@ def run_cli(*flags: str) -> subprocess.CompletedProcess:
         [sys.executable, "-m", "kommitted", *flags],
         capture_output=True,
         text=True,
+        check=False,   # a nonzero exit is a result we assert on, not a crash
     )
 
 
@@ -159,7 +160,9 @@ def test_without_commit_flag_nothing_is_committed(repo):
     stage(repo, "model/a.py", "x\n")
     run_cli()
 
-    log = subprocess.run(["git", "log", "--oneline"], capture_output=True, text=True)
+    log = subprocess.run(
+        ["git", "log", "--oneline"], capture_output=True, text=True, check=False
+    )
     assert log.returncode != 0  # no commits exist yet
 
 

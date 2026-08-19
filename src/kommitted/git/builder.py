@@ -1,6 +1,7 @@
 import os
 
 from . import constants as c
+from .diffcontent import DiffContent
 from .models import Classification, NumStat
 
 
@@ -61,12 +62,19 @@ def format_file_line(st: NumStat) -> str:
     return f"- {st.path} (+{st.added_lines} -{st.deleted_lines})"
 
 
-def build(classification: Classification, stats: list[NumStat]) -> str:
+def build(
+    classification: Classification,
+    stats: list[NumStat],
+    content: DiffContent | None = None,
+) -> str:
     """
     Format:
         <type>(<scope>): <subject>
         <BLANK LINE>
         - file (+a -d)
+        - comments (+a -d)      <- only when comments moved
+
+    `content` is optional because not every caller has parsed the diff body.
     """
     changed_scope = scope(stats)
     head = classification.type
@@ -78,8 +86,28 @@ def build(classification: Classification, stats: list[NumStat]) -> str:
     if len(header) > c.MAX_SUBJECT_LEN:
         header = header[: c.MAX_SUBJECT_LEN - 3] + "..."
 
-    if not stats:
+    # Biggest files first, so the cap below keeps what matters. A body that
+    # lists 48 files is `git diff --stat` with extra steps - nobody reads
+    # past the first screen, and the interesting file is rarely alphabetical.
+    ordered = sorted(stats, key=lambda st: st.total_lines_changed, reverse=True)
+    lines = [format_file_line(st) for st in ordered[: c.MAX_BODY_FILES]]
+
+    if len(ordered) > c.MAX_BODY_FILES:
+        lines.append(
+            c.BODY_MORE_FILES.format(count=len(ordered) - c.MAX_BODY_FILES)
+        )
+
+    # Comment churn gets its own line. numstat counts a reworded comment as
+    # +1 -1 exactly like a reworded condition, so without this the reader
+    # cannot tell prose edits from logic edits.
+    if content is not None and content.comments_changed:
+        lines.append(
+            c.BODY_COMMENTS.format(
+                added=content.added_comments, removed=content.removed_comments
+            )
+        )
+
+    if not lines:
         return header
 
-    body = "\n".join(format_file_line(st) for st in stats)
-    return f"{header}\n\n{body}"
+    return f"{header}\n\n" + "\n".join(lines)

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the floor declared in pyproject.toml. Test the floor and
+        # the current release - if it works on both, the middle is safe.
+        python-version: ["3.10", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # test_cli.py runs `python -m kommitted` in a subprocess, so the
+      # package must really be installed - PYTHONPATH is not enough.
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      # The end-to-end tests create real repos and real commits. Git refuses
+      # to commit without an identity, and CI runners have none.
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "ci"
+          git config --global init.defaultBranch main
+
+      - name: Test
+        run: pytest -q
+
+      - name: Lint
+        run: ruff check src tests

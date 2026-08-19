@@ -2,8 +2,8 @@
 
 import pytest
 
-from kommitted.diffparser import parse_count, parse_numstat
-from kommitted.models import NumStat
+from kommitted.git.diffparser import parse_count, parse_numstat
+from kommitted.git.models import NumStat
 
 # ---------------------------------------------------------------------------
 # parse_count - pure, so these are the cheapest tests in the project

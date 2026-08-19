@@ -1,30 +1,35 @@
-from .base import Brain
-from .llm import LLMBrain
-from .rules import RuleBrain
+from collections.abc import Callable
 
-# The registry the CLI resolves --brain against.
-BRAINS: dict[str, type] = {
+from .base import Brain
+from .llm import LLMBrain, LLMError
+from .rules.rules import RuleBrain
+
+# Factories, not classes, because `llm` and `auto` are the same class with
+# different failure behaviour: `llm` raises when the model is unreachable,
+# `auto` quietly uses the rules instead.
+#
+# Fallback is a property of `auto`, never of failure. Once any mode is
+# allowed to degrade quietly, the flags stop meaning anything.
+BRAINS: dict[str, Callable[[], Brain]] = {
     "rules": RuleBrain,
-    "llm": LLMBrain,
+    "llm": lambda: LLMBrain(strict=True),
+    "auto": lambda: LLMBrain(strict=False),
     # "ollama": OllamaBrain,   <- next
 }
 
-# Rules stay the default: free, offline, instant, and never surprises you.
 DEFAULT_BRAIN = "rules"
-
-# Brains that need the full diff text, not just the file stats. The CLI uses
-# this to avoid fetching a large diff the rule brain would ignore.
-BRAINS_NEEDING_DIFF = frozenset({"rules", "llm"})
+BRAINS_NEEDING_DIFF = frozenset({"rules", "llm", "auto"})
 
 
 def get_brain(name: str = DEFAULT_BRAIN) -> Brain:
     """Look up a brain by name. Raises KeyError listing the valid options."""
     try:
-        return BRAINS[name]()
+        factory = BRAINS[name]
     except KeyError:
         raise KeyError(
             f"unknown brain {name!r}; available: {', '.join(sorted(BRAINS))}"
         ) from None
+    return factory()
 
 
 __all__ = [
@@ -33,6 +38,7 @@ __all__ = [
     "DEFAULT_BRAIN",
     "Brain",
     "LLMBrain",
+    "LLMError",
     "RuleBrain",
     "get_brain",
 ]

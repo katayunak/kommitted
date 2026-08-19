@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-from kommitted.gitrunner import (
+from kommitted.git.gitrunner import (
     GitError,
     commit,
     current_branch,

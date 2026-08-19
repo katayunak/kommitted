@@ -7,9 +7,11 @@ check every failure mode reaches the right place.
 
 import pytest
 
-from kommitted import constants as c
+from kommitted.brains import constants as c
 from kommitted.brains import llm as llm_module
 from kommitted.brains.llm import LLMBrain, LLMError, build_prompt
+from kommitted.brains.rules.commit_type import CommitType
+from kommitted.git import constants as gc
 
 from .conftest import stat
 
@@ -23,7 +25,14 @@ GOOD_RESPONSE = {
 
 @pytest.fixture
 def brain():
+    """The strict brain: `-b llm`. Raises rather than degrading."""
     return LLMBrain(api_key="fake-key-for-tests")
+
+
+@pytest.fixture
+def auto_brain():
+    """The lenient brain: `-b auto`. Falls back to rules and says so."""
+    return LLMBrain(api_key="fake-key-for-tests", strict=False)
 
 
 def fake_gemini(response):
@@ -64,58 +73,63 @@ def test_reason_is_labelled_as_coming_from_the_model(brain, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Fallback - the property that makes this shippable
+# Fallback belongs to `auto`, never to failure
+#
+# `-b llm` names the model. Answering with the rule brain instead prints
+# something that looks fine and is not what was asked for - and without
+# --why there is nothing on screen to say so. So `llm` raises and `auto`
+# degrades.
 # ---------------------------------------------------------------------------
 
 
 def test_missing_api_key_falls_back_to_rules():
-    brain = LLMBrain(api_key="")
+    brain = LLMBrain(api_key="", strict=False)
     result = brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
 
     assert result.type  # still got an answer
     assert c.GEMINI_API_KEY_ENV in result.reasons[0]
 
 
-def test_network_failure_falls_back(brain, monkeypatch):
+def test_network_failure_falls_back(auto_brain, monkeypatch):
     monkeypatch.setattr(
         llm_module, "call_gemini", failing_gemini(LLMError("network error: unreachable"))
     )
-    result = brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
+    result = auto_brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
 
     assert result.type
     assert "network error" in result.reasons[0]
 
 
-def test_unknown_commit_type_falls_back(brain, monkeypatch):
+def test_unknown_commit_type_falls_back(auto_brain, monkeypatch):
     bad = {**GOOD_RESPONSE, "type": "banana"}
     monkeypatch.setattr(llm_module, "call_gemini", fake_gemini(bad))
 
-    result = brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
-    assert result.type in c.VERBS  # never leaks an invalid type downstream
+    result = auto_brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
+    assert result.type in gc.VERBS  # never leaks an invalid type downstream
 
 
-def test_empty_subject_falls_back(brain, monkeypatch):
+def test_empty_subject_falls_back(auto_brain, monkeypatch):
     bad = {**GOOD_RESPONSE, "subject": "   "}
     monkeypatch.setattr(llm_module, "call_gemini", fake_gemini(bad))
 
-    result = brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
+    result = auto_brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
     assert "empty subject" in result.reasons[0]
 
 
-def test_low_confidence_falls_back_to_rules(brain, monkeypatch):
+def test_low_confidence_falls_back_to_rules(auto_brain, monkeypatch):
     unsure = {**GOOD_RESPONSE, "confidence": 0.1}
     monkeypatch.setattr(llm_module, "call_gemini", fake_gemini(unsure))
 
-    result = brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
+    result = auto_brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
     # A model that says it's guessing should not outrank an honest heuristic.
     assert "below threshold" in result.reasons[0]
 
 
-def test_non_numeric_confidence_falls_back(brain, monkeypatch):
+def test_non_numeric_confidence_falls_back(auto_brain, monkeypatch):
     bad = {**GOOD_RESPONSE, "confidence": "very sure"}
     monkeypatch.setattr(llm_module, "call_gemini", fake_gemini(bad))
 
-    result = brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
+    result = auto_brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
     assert "non-numeric" in result.reasons[0]
 
 
@@ -132,7 +146,7 @@ def test_nothing_staged_never_calls_the_model(brain, monkeypatch):
         raise AssertionError("should not call the API with nothing staged")
 
     monkeypatch.setattr(llm_module, "call_gemini", explode)
-    assert brain.classify([]).type == c.TYPE_CHORE
+    assert brain.classify([]).type == CommitType.CHORE.value
 
 
 # ---------------------------------------------------------------------------
@@ -159,3 +173,34 @@ def test_file_list_survives_truncation():
     huge = "+x\n" * 100_000
     prompt = build_prompt([stat("model/important.py", 1, 1)], huge)
     assert "model/important.py" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Strict mode: `-b llm` must not answer with something else
+# ---------------------------------------------------------------------------
+
+
+def test_strict_brain_raises_when_the_key_is_missing():
+    brain = LLMBrain(api_key="", strict=True)
+    with pytest.raises(LLMError) as caught:
+        brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
+    assert c.GEMINI_API_KEY_ENV in str(caught.value)
+
+
+def test_strict_brain_raises_when_the_model_is_unreachable(brain, monkeypatch):
+    monkeypatch.setattr(
+        llm_module, "call_gemini", failing_gemini(LLMError("HTTP 403"))
+    )
+    with pytest.raises(LLMError):
+        brain.classify([stat("model/a.py", 100, 0)], diff="+ x")
+
+
+def test_the_two_modes_report_different_names():
+    assert LLMBrain(api_key="k", strict=True).name == "llm"
+    assert LLMBrain(api_key="k", strict=False).name == "auto"
+
+
+def test_strict_is_the_default():
+    # `-b llm` is the common spelling, so the safe-by-surprise default is
+    # the one that refuses rather than the one that quietly substitutes.
+    assert LLMBrain(api_key="k").strict

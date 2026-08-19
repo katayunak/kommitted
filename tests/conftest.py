@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from kommitted.models import NumStat
+from kommitted.git.models import NumStat
 
 
 @pytest.fixture

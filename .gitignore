@@ -35,3 +35,10 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.egg-info/
+
+# personal study notes, not for the repo
+study/
+
+# build output
+build/
+dist/

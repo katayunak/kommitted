@@ -1,8 +1,8 @@
 """Tests for builder. All pure functions - no fixtures, no git."""
 
-from kommitted.builder import build, format_file_line, scope, subject
-from kommitted.constants import MAX_SUBJECT_LEN
-from kommitted.models import Classification, NumStat
+from kommitted.git.builder import build, format_file_line, scope, subject
+from kommitted.git.constants import MAX_SUBJECT_LEN
+from kommitted.git.models import Classification, NumStat
 
 from .conftest import stat
 
